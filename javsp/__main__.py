@@ -10,6 +10,8 @@ from pydantic_extra_types.pendulum_dt import Duration
 import requests
 import threading
 from typing import Dict, List
+import datetime
+import shutil
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -18,13 +20,64 @@ import pretty_errors
 from colorama import Fore, Style
 from tqdm import tqdm
 
+from javsp.print import TqdmOut
+
+# 配置日志格式，使其更加美观
+class ColoredFormatter(logging.Formatter):
+    """自定义的彩色日志格式化器"""
+    COLORS = {
+        'DEBUG': '\033[94m',     # 蓝色
+        'INFO': '\033[92m',      # 绿色
+        'WARNING': '\033[93m',   # 黄色
+        'ERROR': '\033[91m',     # 红色
+        'CRITICAL': '\033[95m',  # 紫色
+        'RESET': '\033[0m'       # 重置
+    }
+
+    def format(self, record):
+        # 获取原始的日志消息格式
+        log_message = super().format(record)
+        # 添加颜色
+        if record.levelname in self.COLORS:
+            log_message = f"{self.COLORS[record.levelname]}{log_message}{self.COLORS['RESET']}"
+        return log_message
+
+# 设置日志格式和级别
+def setup_logging():
+    """配置日志系统"""
+    root_logger = logging.getLogger()
+    
+    # 清除现有的处理器
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # 创建控制台处理器
+    console_handler = logging.StreamHandler(TqdmOut)
+    
+    # 设置格式
+    log_format = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    date_format = '%Y-%m-%d %H:%M:%S'
+    formatter = ColoredFormatter(log_format, date_format)
+    console_handler.setFormatter(formatter)
+    
+    # 添加处理器
+    root_logger.addHandler(console_handler)
+    
+    # 设置日志级别
+    root_logger.setLevel(logging.INFO)
+    
+    # 创建日志目录
+    os.makedirs('logs', exist_ok=True)
+    
+    # 添加文件处理器
+    current_time = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    file_handler = logging.FileHandler(f'logs/javsp_{current_time}.log', encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter(log_format, date_format))
+    root_logger.addHandler(file_handler)
+    
+    return root_logger
 
 pretty_errors.configure(display_link=True)
-
-
-from javsp.print import TqdmOut
-from javsp.cropper import Cropper, get_cropper
-
 
 # 将StreamHandler的stream修改为TqdmOut，以与Tqdm协同工作
 root_logger = logging.getLogger()
@@ -32,8 +85,11 @@ for handler in root_logger.handlers:
     if type(handler) == logging.StreamHandler:
         handler.stream = TqdmOut
 
+# 设置日志
+root_logger = setup_logging()
 logger = logging.getLogger('main')
 
+from javsp.cropper import Cropper, get_cropper
 
 from javsp.lib import resource_path
 from javsp.nfo import write_nfo
@@ -44,6 +100,8 @@ from javsp.datatype import Movie, MovieInfo
 from javsp.web.base import download
 from javsp.web.exceptions import *
 from javsp.web.translate import translate_movie_info
+from javsp.telegram_notify import notifier  # 导入 Telegram 通知模块
+from javsp.func import set_current_movie_info, get_current_movie_info  # 导入影片信息共享函数
 
 from javsp.config import Cfg, CrawlerID
 from javsp.prompt import prompt
@@ -89,26 +147,27 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
             try:
                 parser(info)
                 movie_id = info.dvdid or info.cid
-                logger.debug(f"{crawler_name}: 抓取成功: '{movie_id}': '{info.url}'")
+                logger.debug(f"🎬 {crawler_name}: 抓取成功 '{movie_id}' ✅")
+                logger.debug(f"🔗 {crawler_name}: 来源地址 '{info.url}'")
                 setattr(info, 'success', True)
                 if isinstance(tqdm_bar, tqdm):
-                    tqdm_bar.set_description(f'{crawler_name}: 抓取完成')
+                    tqdm_bar.set_description(f'🎬 {crawler_name}: 抓取完成')
                 break
             except MovieNotFoundError as e:
-                logger.debug(e)
+                logger.debug(f"⚠️ {crawler_name}: 影片未找到 - {str(e)}")
                 break
             except MovieDuplicateError as e:
-                logger.exception(e)
+                logger.exception(f"⚠️ {crawler_name}: 重复影片 - {str(e)}")
                 break
             except (SiteBlocked, SitePermissionError, CredentialError) as e:
-                logger.error(e)
+                logger.error(f"🚫 {crawler_name}: 站点访问受限 - {str(e)}")
                 break
             except requests.exceptions.RequestException as e:
-                logger.debug(f'{crawler_name}: 网络错误，正在重试 ({cnt+1}/{retry}): \n{repr(e)}')
+                logger.debug(f'🔄 {crawler_name}: 网络错误，重试中 ({cnt+1}/{retry})\n  原因: {repr(e)}')
                 if isinstance(tqdm_bar, tqdm):
-                    tqdm_bar.set_description(f'{crawler_name}: 网络错误，正在重试')
+                    tqdm_bar.set_description(f'🔄 {crawler_name}: 网络错误，重试中')
             except Exception as e:
-                logger.exception(e)
+                logger.exception(f"❌ {crawler_name}: 未知错误 - {str(e)}")
 
     # 根据影片的数据源获取对应的抓取器
     crawler_mods: List[CrawlerID] = Cfg().crawler.selection[movie.data_src]
@@ -161,15 +220,22 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
 def info_summary(movie: Movie, all_info: Dict[str, MovieInfo]):
     """汇总多个来源的在线数据生成最终数据"""
     final_info = MovieInfo(movie)
+    logger.info(f"📊 开始汇总影片 {movie.dvdid or movie.cid} 的元数据")
+    
     ########## 部分字段配置了专门的选取逻辑，先处理这些字段 ##########
     # genre
     if 'javdb' in all_info and all_info['javdb'].genre:
+        logger.debug(f"🏷️ 使用 javdb 的标签分类")
         final_info.genre = all_info['javdb'].genre
 
     ########## 移除所有抓取器数据中，标题尾部的女优名 ##########
     if Cfg().summarizer.title.remove_trailing_actor_name:
         for name, data in all_info.items():
+            old_title = data.title
             data.title = remove_trail_actor_in_title(data.title, data.actress)
+            if old_title != data.title:
+                logger.debug(f"📝 {name}: 从标题中移除女优名: '{old_title}' -> '{data.title}'")
+                
     ########## 然后检查所有字段，如果某个字段还是默认值，则按照优先级选取数据 ##########
     # parser直接更新了all_info中的项目，而初始all_info是按照优先级生成的，已经符合配置的优先级顺序了
     # 按照优先级取出各个爬虫获取到的信息
@@ -184,11 +250,11 @@ def info_summary(movie: Movie, all_info: Dict[str, MovieInfo]):
             if attr == 'cover':
                 if incoming and (incoming not in covers):
                     covers.append(incoming)
-                    absorbed.append(attr)
+                    absorbed.append(f"{attr} ({len(covers)})")
             elif attr == 'big_cover':
                 if incoming and (incoming not in big_covers):
                     big_covers.append(incoming)
-                    absorbed.append(attr)
+                    absorbed.append(f"{attr} ({len(big_covers)})")
             elif attr == 'uncensored':
                 if (current is None) and (incoming is not None):
                     setattr(final_info, attr, incoming)
@@ -198,7 +264,8 @@ def info_summary(movie: Movie, all_info: Dict[str, MovieInfo]):
                     setattr(final_info, attr, incoming)
                     absorbed.append(attr)
         if absorbed:
-            logger.debug(f"从'{name}'中获取了字段: " + ' '.join(absorbed))
+            logger.debug(f"📥 从 '{name}' 中获取了: " + ', '.join(absorbed))
+    
     # 使用网站的番号作为番号
     if Cfg().crawler.respect_site_avid:
         id_weight = {}
@@ -212,10 +279,18 @@ def info_summary(movie: Movie, all_info: Dict[str, MovieInfo]):
         if id_weight:
             id_weight = {k:v for k, v in sorted(id_weight.items(), key=lambda x:len(x[1]), reverse=True)}
             final_id = list(id_weight.keys())[0]
+            sources = ', '.join(id_weight[final_id])
             if movie.dvdid:
+                old_id = final_info.dvdid
                 final_info.dvdid = final_id
+                if old_id != final_id:
+                    logger.debug(f"🔢 修正番号: {old_id} -> {final_id} (来源: {sources})")
             else:
+                old_id = final_info.cid
                 final_info.cid = final_id
+                if old_id != final_id:
+                    logger.debug(f"🔢 修正番号: {old_id} -> {final_id} (来源: {sources})")
+    
     # javdb封面有水印，优先采用其他站点的封面
     javdb_cover = getattr(all_info.get('javdb'), 'cover', None)
     if javdb_cover is not None:
@@ -438,6 +513,9 @@ def RunNormalMode(all_movies):
         total_step += 1
 
     return_movies = []
+    success_count = 0
+    failed_count = 0
+    
     for movie in outer_bar:
         try:
             # 初始化本次循环要整理影片任务
@@ -453,6 +531,9 @@ def RunNormalMode(all_movies):
             inner_bar.set_description('汇总数据')
             has_required_keys = info_summary(movie, all_info)
             check_step(has_required_keys)
+            
+            # 设置当前影片信息，供通知系统使用
+            set_current_movie_info(movie.info)
 
             if Cfg().translator.engine:
                 inner_bar.set_description('翻译影片信息')
@@ -519,15 +600,46 @@ def RunNormalMode(all_movies):
                 logger.info(f'整理完成，相关文件已保存到: {movie.save_dir}\n')
             else:
                 logger.info(f'刮削完成，相关文件已保存到: {movie.nfo_file}\n')
-
+            
+            # 发送 Telegram 成功通知
+            movie_id = movie.dvdid or movie.cid
+            notifier.send_success_notification(
+                movie_title=movie.info.title, 
+                movie_id=movie_id,
+                save_dir=movie.save_dir,
+                poster_path=movie.poster_file
+            )
+            
+            success_count += 1
+            
             if movie != all_movies[-1] and Cfg().crawler.sleep_after_scraping > Duration(0):
                 time.sleep(Cfg().crawler.sleep_after_scraping.total_seconds())
             return_movies.append(movie)
-        # except Exception as e:
-        #     logger.debug(e, exc_info=True)
-        #     logger.error(f'整理失败: {e}')
+        except Exception as e:
+            logger.debug(e, exc_info=True)
+            logger.error(f'整理失败: {e}')
+            
+            # 发送 Telegram 失败通知
+            movie_id = movie.dvdid or movie.cid
+            notifier.send_error_notification(
+                movie_id=movie_id,
+                error_message=str(e)
+            )
+            
+            failed_count += 1
         finally:
+            # 清除当前影片信息
+            set_current_movie_info(None)
             inner_bar.close()
+    
+    # 发送批量整理完成的汇总通知
+    total_count = len(all_movies)
+    notifier.send_batch_summary(
+        total=total_count,
+        success=success_count,
+        failed=failed_count
+    )
+    
     return return_movies
 
 

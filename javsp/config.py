@@ -1,8 +1,8 @@
 from argparse import ArgumentParser, RawTextHelpFormatter
 from enum import Enum
-from typing import Dict, List, Literal, TypeAlias, Union
+from typing import Dict, List, Literal, TypeAlias, Union, Optional
 from confz import BaseConfig, CLArgSource, EnvSource, FileSource
-from pydantic import ByteSize, Field, NonNegativeInt, PositiveInt
+from pydantic import ByteSize, Field, NonNegativeInt, PositiveInt, BaseModel
 from pydantic_extra_types.pendulum_dt import Duration
 from pydantic_core import Url
 from pathlib import Path
@@ -102,9 +102,9 @@ class MovieInfoField(str, Enum):
     preview_video = 'preview_video'
 
 class UseJavDBCover(str, Enum):
-    yes = "yes"
-    no = "no"
-    fallback = "fallback"
+    yes = 'yes'
+    no = 'no'
+    fallback = 'fallback'
 
 class Crawler(BaseConfig):
     selection: CrawlerSelect
@@ -215,6 +215,16 @@ class Other(BaseConfig):
     check_update: bool
     auto_update: bool
 
+# 添加 Telegram 通知配置
+class TelegramConfig(BaseModel):
+    """Telegram 通知配置"""
+    enabled: bool = False
+    token: Optional[str] = None
+    chat_id: Optional[str] = None
+    proxy: Optional[str] = None
+    send_cover: bool = True
+    notification_level: str = "all"  # all, success, error
+
 def get_config_source():
     parser = ArgumentParser(prog='JavSP', description='汇总多站点数据的AV元数据刮削器', formatter_class=RawTextHelpFormatter)
     parser.add_argument('-c', '--config', help='使用指定的配置文件')
@@ -234,4 +244,5 @@ class Cfg(BaseConfig):
     summarizer: Summarizer
     translator: Translator
     other: Other
+    telegram_config: TelegramConfig
     CONFIG_SOURCES=get_config_source()

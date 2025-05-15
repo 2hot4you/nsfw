@@ -119,9 +119,18 @@ def request_get(url, cookies={}, timeout=None, delay_raise=False):
     if timeout is None:
         timeout = Cfg().network.timeout.seconds
     
+    logger.debug(f"🌐 发送请求: GET {url}")
+    start_time = time.time()
     r = requests.get(url, headers=headers, proxies=read_proxy(), cookies=cookies, timeout=timeout)
+    elapsed = time.time() - start_time
+    
+    # 记录响应信息
+    status_emoji = "✅" if r.status_code < 400 else "❌"
+    logger.debug(f"{status_emoji} 响应状态: {r.status_code} ({round(elapsed*1000)}ms) - {url}")
+    
     if not delay_raise:
         if r.status_code == 403 and b'>Just a moment...<' in r.content:
+            logger.error(f"🚫 CloudFlare 阻止: {url}")
             raise SiteBlocked(f"403 Forbidden: 无法通过CloudFlare检测: {url}")
         else:
             r.raise_for_status()
@@ -132,7 +141,16 @@ def request_post(url, data, cookies={}, timeout=None, delay_raise=False):
     """向指定url发送post请求"""
     if timeout is None:
         timeout = Cfg().network.timeout.seconds
+    
+    logger.debug(f"🌐 发送请求: POST {url}")
+    start_time = time.time()
     r = requests.post(url, data=data, headers=headers, proxies=read_proxy(), cookies=cookies, timeout=timeout)
+    elapsed = time.time() - start_time
+    
+    # 记录响应信息
+    status_emoji = "✅" if r.status_code < 400 else "❌"
+    logger.debug(f"{status_emoji} 响应状态: {r.status_code} ({round(elapsed*1000)}ms) - {url}")
+    
     if not delay_raise:
         r.raise_for_status()
     return r
@@ -235,22 +253,29 @@ def urlretrieve(url, filename=None, reporthook=None, headers=None):
 
 def download(url, output_path, desc=None):
     """下载指定url的资源"""
-    # 支持“下载”本地资源，以供fc2fan的本地镜像所使用
+    # 支持"下载"本地资源，以供fc2fan的本地镜像所使用
     if not url.startswith('http'):
         start_time = time.time()
+        logger.debug(f"📋 复制本地文件: {url} -> {output_path}")
         shutil.copyfile(url, output_path)
         filesize = os.path.getsize(url)
         elapsed = time.time() - start_time
         info = {'total': filesize, 'elapsed': elapsed, 'rate': filesize/elapsed}
+        logger.debug(f"✅ 复制完成: {filesize/1024/1024:.2f}MB, 耗时: {elapsed:.2f}秒")
         return info
     if not desc:
         desc = url.split('/')[-1]
+    
+    logger.debug(f"⬇️ 开始下载: {desc} -> {output_path}")
     referrer = headers.copy()
     referrer['referer'] = url[:url.find('/', 8)+1]  # 提取base_url部分
     with DownloadProgressBar(unit='B', unit_scale=True,
                              miniters=1, desc=desc, leave=False) as t:
         urlretrieve(url, filename=output_path, reporthook=t.update_to, headers=referrer)
         info = {k: t.format_dict[k] for k in ('total', 'elapsed', 'rate')}
+        size_mb = info['total'] / 1024 / 1024
+        rate_mb = info['rate'] / 1024 / 1024
+        logger.debug(f"✅ 下载完成: {desc} ({size_mb:.2f}MB), 速度: {rate_mb:.2f}MB/s, 耗时: {info['elapsed']:.2f}秒")
         return info
 
 

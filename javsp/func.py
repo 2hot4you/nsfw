@@ -15,6 +15,11 @@ from packaging import version
 from colorama import Style
 from pathlib import Path
 import importlib.metadata as meta
+import json
+import urllib.parse
+import hashlib
+import threading
+from typing import Dict, List, Set, Union, Optional
 
 # 判断系统是否可以使用tk
 USE_GUI = True
@@ -34,6 +39,10 @@ __all__ = ['select_folder', 'get_scan_dir', 'remove_trail_actor_in_title',
 
 CLEAR_LINE = '\r\x1b[K'
 logger = logging.getLogger(__name__)
+
+# 用于在不同模块间共享当前影片信息的全局变量
+_current_movie_info = None
+_movie_info_lock = threading.Lock()
 
 
 def select_folder(default_dir=''):
@@ -131,7 +140,7 @@ _punc = (
 "!\"#%&'()*,-./:;?@[\\]_{}", # (0x0, 0x7f), Basic Latin
 "¡§«¶·»¿",                  # (0x80, 0xff), Latin-1 Supplement
 ";·",                       # (0x370, 0x3ff), Greek and Coptic
-"‐‑‒–—―‖‗‘’‚‛“”„‟†‡•‣․‥…‧‰‱′″‴‵‶‷‸‹›※‼‽‾‿⁀⁁⁂⁃⁅⁆⁇⁈⁉⁊⁋⁌⁍⁎⁏⁐⁑⁓⁔⁕⁖⁗⁘⁙⁚⁛⁜⁝⁞",  # (0x2000, 0x206f), General Punctuation
+"‐‑‒–—―‖‗‘'‚‛""„‟†‡•‣․‥…‧‰‱′″‴‵‶‷‸‹›※‼‽‾‿⁀⁁⁂⁃⁅⁆⁇⁈⁉⁊⁋⁌⁍⁎⁏⁐⁑⁓⁔⁕⁖⁗⁘⁙⁚⁛⁜⁝⁞",  # (0x2000, 0x206f), General Punctuation
 "、。〃〈〉《》「」『』【】〔〕〖〗〘〙〚〛〜〝〞〟〰〽",                        # (0x3000, 0x303f), CJK Symbols and Punctuation
 "゠・",                     # (0x30a0, 0x30ff), Katakana
 "︐︑︒︓︔︕︖︗︘︙",      # (0xfe10, 0xfe1f), Vertical Forms
@@ -271,6 +280,26 @@ def download_update(rel_info):
             p.wait()
             p.terminate()
             sys.exit(0)
+
+
+def set_current_movie_info(movie_info):
+    """设置当前正在处理的影片信息，供通知系统使用
+    
+    Args:
+        movie_info: 影片信息对象
+    """
+    global _current_movie_info
+    with _movie_info_lock:
+        _current_movie_info = movie_info
+
+def get_current_movie_info():
+    """获取当前正在处理的影片信息
+    
+    Returns:
+        当前影片信息对象，如果没有则返回None
+    """
+    with _movie_info_lock:
+        return _current_movie_info
 
 
 if __name__ == "__main__":

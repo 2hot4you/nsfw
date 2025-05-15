@@ -192,3 +192,19 @@ other:
   check_update: false
   # 是否允许检查到新版本时自动下载
   auto_update: false
+
+################################
+# Telegram 通知配置
+telegram_config:
+  # 是否启用 Telegram 通知
+  enabled: true
+  # Telegram Bot Token (从 @BotFather 获取)
+  token: '7915832234:AAFOgi0vEGDuNKh8Qatoykza-kLr4F-Uh1M'
+  # 接收通知的聊天 ID
+  chat_id: '1910239584'
+  # 代理服务器 (可选，与网络代理格式相同)
+  proxy: null
+  # 是否发送封面图片
+  send_cover: true
+  # 通知级别: all - 所有通知, success - 只通知成功, error - 只通知失败
+  notification_level: "all"
