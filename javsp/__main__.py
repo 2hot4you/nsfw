@@ -12,6 +12,7 @@ import threading
 from typing import Dict, List
 import datetime
 import shutil
+import logging.handlers  # 添加这一行导入日志handlers
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -69,9 +70,9 @@ def setup_logging():
     # 创建日志目录
     os.makedirs('logs', exist_ok=True)
     
-    # 添加文件处理器
-    current_time = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_handler = logging.FileHandler(f'logs/javsp_{current_time}.log', encoding='utf-8')
+    # 添加文件处理器 - 按天创建日志文件
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    file_handler = logging.FileHandler(f'logs/javsp_{today}.log', encoding='utf-8', mode='a')
     file_handler.setFormatter(logging.Formatter(log_format, date_format))
     root_logger.addHandler(file_handler)
     

@@ -16,7 +16,7 @@ RUN poetry self add poetry-dynamic-versioning && \
     rm -rf /app/.git
 
 
-FROM python:3.12-slim as runner
+FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
