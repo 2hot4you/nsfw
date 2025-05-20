@@ -7,6 +7,7 @@ import requests
 import html
 from typing import Optional
 from javsp.config import Cfg
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

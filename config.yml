@@ -11,16 +11,20 @@ scanner:
     - 'Carib(beancom)?'
     - '[^a-z\d](f?hd|lt)[^a-z\d]'
   # 整理哪个文件夹下的影片？（此项留空时将在运行时询问）
-  input_directory: /Users/naf/Movies/NSFW
+  input_directory: "/Users/naf/Movies/NSFW"
   # 哪些后缀的文件应当视为影片？
-  filename_extensions: [.3gp, .avi, .f4v, .flv, .iso, .m2ts, .m4v, .mkv, .mov, .mp4, .mpeg, .rm, .rmvb, .ts, .vob, .webm, .wmv, .strm, .mpg]
+  filename_extensions: [".mp4", ".avi", ".mkv", ".wmv", ".flv", ".mov", ".m4v", ".ts"]
   # 扫描影片文件时忽略指定的文件夹
-  ignored_folder_name_pattern: ['^\.', '^#recycle$', '^#整理完成$', '^#不要扫描$','^#Done$']
+  ignored_folder_name_pattern: ["^#", "^@", "^~", "^temp", "^tmp", "^cache", "^backup"]
   # 匹配番号时忽略小于指定大小的文件
   # 格式要求：https://docs.pydantic.dev/2.0/usage/types/bytesize/
   minimum_size: 232MiB
   skip_nfo_dir: yes
   manual: no
+  # 字幕文件扩展名
+  subtitle_extensions: [".srt", ".ass", ".ssa", ".sub", ".idx", ".smi", ".vtt"]
+  run_time: "02:00"  # 设置每天运行的时间，格式为 HH:MM
+  delete_empty_folders: true   # 是否删除空文件夹
 ################################
 network:
   # 设置代理服务器地址，支持 http, socks5/socks5h 代理，比如'http://127.0.0.1:1080'
@@ -85,6 +89,8 @@ summarizer:
     max_actress_count: 10
     # 是否用硬链接方式整理文件？硬链接可以节省空间，但不是所有文件系统都支持
     hard_link: false
+    # 是否同时移动字幕文件
+    move_subtitles: true
 
   #标题处理
   title:

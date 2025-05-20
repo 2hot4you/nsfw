@@ -5,6 +5,7 @@ import json
 import shutil
 import logging
 from functools import cached_property
+from pathlib import Path
 
 from javsp.config import Cfg
 from javsp.lib import resource_path, detect_special_attr
@@ -187,6 +188,8 @@ class Movie:
 
         new_paths = []
         dir = os.path.dirname(self.files[0])
+        
+        # 移动视频文件
         if len(self.files) == 1:
             fullpath = self.files[0]
             ext = os.path.splitext(fullpath)[1]
@@ -199,6 +202,7 @@ class Movie:
                 newpath = os.path.join(self.save_dir, self.basename + f'-CD{i}' + ext)
                 move_file(fullpath, newpath)
                 new_paths.append(newpath)
+        
         self.new_paths = new_paths
         if len(os.listdir(dir)) == 0:
             #如果移动文件后目录为空则删除该目录
